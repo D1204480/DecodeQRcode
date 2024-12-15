@@ -108,6 +108,31 @@
         top: 100%;
       }
     }
+
+    .camera-container {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    #video {
+      width: 100%;
+      max-width: 500px;
+    }
+
+    #canvas {
+      display: none;
+    }
+
+    .debug-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
   </style>
 </head>
 
@@ -126,14 +151,15 @@
 
     <div id="cameraSection" class="camera-container hidden">
       <div class="scanning-area">
-        <video id="video" autoplay playsinline></video>
-        <div class="scanning-line"></div>
+          <video id="video" autoplay playsinline></video>
+          <canvas id="debugCanvas" class="debug-canvas"></canvas>
+          <div class="scanning-line"></div>
       </div>
       <canvas id="canvas"></canvas>
       <div class="loading-overlay hidden" id="loadingOverlay">
-        正在啟動相機...
+          正在啟動相機...
       </div>
-    </div>
+  </div>
 
     <div id="decodedSection" class="hidden">
       <button onclick="decryptContent()">進行解密</button>
@@ -152,18 +178,20 @@
 
   <script>
     const state = {
-      decodedContent: null,
-      decryptedContent: null,
-      parsedContent: {
-        orderId: null,
-        orderDate: null
-      },
-      errorMessage: null,
-      secretKey: "1234567890123456",
-      scanMethod: 'file',
-      loadingCamera: false,
-      scanning: false
-    };
+            decodedContent: null,
+            decryptedContent: null,
+            parsedContent: {
+                orderId: null,
+                orderDate: null
+            },
+            errorMessage: null,
+            secretKey: "1234567890123456",
+            scanMethod: 'file',
+            loadingCamera: false,
+            scanning: false,
+            canvasContext: null,
+            debugCanvasContext: null
+        };
 
     function switchMethod(method) {
       state.scanMethod = method;
@@ -180,31 +208,49 @@
     }
 
     async function initCamera() {
-      const video = document.getElementById('video');
-      const loadingOverlay = document.getElementById('loadingOverlay');
-      loadingOverlay.classList.remove('hidden');
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const debugCanvas = document.getElementById('debugCanvas');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            
+            state.canvasContext = canvas.getContext('2d');
+            state.debugCanvasContext = debugCanvas.getContext('2d');
+            
+            loadingOverlay.classList.remove('hidden');
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        });
-        video.srcObject = stream;
-        video.play();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                video.srcObject = stream;
+                
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
 
-        video.onloadedmetadata = () => {
-          state.scanning = true;
-          scanQRCode();
-        };
-      } catch (error) {
-        handleCameraError(error);
-      } finally {
-        loadingOverlay.classList.add('hidden');
-      }
-    }
+                // Set canvas sizes
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                debugCanvas.width = video.videoWidth;
+                debugCanvas.height = video.videoHeight;
+
+                state.scanning = true;
+                scanQRCode();
+                
+            } catch (error) {
+                handleCameraError(error);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
 
     function stopCamera() {
       state.scanning = false;
@@ -215,36 +261,60 @@
     }
 
     function scanQRCode() {
-      if (!state.scanning) return;
+            if (!state.scanning) return;
 
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const context = canvas.getContext('2d');
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = state.canvasContext;
+            const debugContext = state.debugCanvasContext;
 
-      // Set canvas size to match video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+            // Clear debug canvas
+            debugContext.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw current video frame
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            // Ensure video is playing and has proper dimensions
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // Draw current video frame
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
 
-      // Scan for QR code
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: "dontInvert",
-      });
+                // Scan for QR code
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
 
-      if (code) {
-        // QR code found
-        state.decodedContent = code.data;
-        document.getElementById('decodedSection').classList.remove('hidden');
-        stopCamera();
-        switchMethod('file'); // Switch back to file mode after successful scan
-      } else {
-        // Continue scanning
-        requestAnimationFrame(scanQRCode);
-      }
-    }
+                if (code) {
+                    console.log("QR Code detected:", code.data);
+
+                    // Draw location of QR code
+                    drawQRLocation(code.location, debugContext);
+
+                    // Handle the decoded content
+                    if (code.data) {
+                        state.decodedContent = code.data;
+                        document.getElementById('decodedSection').classList.remove('hidden');
+                        stopCamera();
+                        switchMethod('file'); // Switch back to file mode after successful scan
+                        return;
+                    }
+                }
+            }
+
+            // Continue scanning
+            requestAnimationFrame(scanQRCode);
+        }
+
+        function drawQRLocation(location, context) {
+            // Draw QR code location for debugging
+            context.beginPath();
+            context.moveTo(location.topLeftCorner.x, location.topLeftCorner.y);
+            context.lineTo(location.topRightCorner.x, location.topRightCorner.y);
+            context.lineTo(location.bottomRightCorner.x, location.bottomRightCorner.y);
+            context.lineTo(location.bottomLeftCorner.x, location.bottomLeftCorner.y);
+            context.lineTo(location.topLeftCorner.x, location.topLeftCorner.y);
+            context.strokeStyle = "#FF3B58";
+            context.lineWidth = 4;
+            context.stroke();
+        }
 
     function handleCameraError(error) {
       let message = "相機啟動失敗";
