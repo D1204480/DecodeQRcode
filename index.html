@@ -1,56 +1,112 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>解碼 QR Code</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
   <style>
     .decode-qrcode-view {
       padding: 20px;
-      max-width: 800px;
-      margin: 0 auto;
     }
 
-    .decode-qrcode-view button {
+    .scan-methods {
+      margin-bottom: 20px;
+    }
+
+    .scan-methods button {
+      margin-right: 10px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+
+    .scan-methods button.active {
+      background-color: #4CAF50;
+      color: white;
+    }
+
+    .camera-container {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1;
+    }
+
+    button {
       margin-top: 10px;
       padding: 10px 20px;
       font-size: 16px;
       cursor: pointer;
     }
 
-    .decode-qrcode-view h2 {
+    h2 {
       color: #333;
       margin-top: 20px;
     }
 
-    .decode-qrcode-view p {
+    p {
       font-size: 16px;
       color: #666;
     }
 
     .error {
       color: red;
+      margin-top: 10px;
     }
 
-    .order-details {
-      margin-top: 15px;
-      padding: 15px;
-      border: 1px solid #ddd;
-      border-radius: 5px;
+    .hidden {
+      display: none;
     }
 
-    .order-details div {
-      margin: 8px 0;
+    #video {
+      width: 100%;
+      max-width: 500px;
     }
 
-    .order-details label {
-      font-weight: bold;
-      margin-right: 10px;
-      min-width: 100px;
-      display: inline-block;
+    #canvas {
+      display: none;
+    }
+
+    .scanning-area {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .scanning-line {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background: red;
+      animation: scan 2s linear infinite;
+    }
+
+    @keyframes scan {
+      0% {
+        top: 0;
+      }
+
+      100% {
+        top: 100%;
+      }
     }
   </style>
 </head>
@@ -58,28 +114,38 @@
 <body>
   <div class="decode-qrcode-view">
     <h1>解碼 QR Code</h1>
-    <div>
-      <input type="file" id="fileInput" accept="image/*" />
+
+    <div class="scan-methods">
+      <button onclick="switchMethod('file')" id="fileBtn">檔案上傳</button>
+      <button onclick="switchMethod('camera')" id="cameraBtn">相機掃描</button>
     </div>
-    <div id="decodedContentSection" style="display: none;">
-      <h2>解碼結果：</h2>
-      <p id="decodedContent"></p>
-      <button onclick="decryptContent()">進一步解密</button>
+
+    <div id="fileSection">
+      <input type="file" onchange="handleFileChange(event)" accept="image/*" />
     </div>
-    <div id="decryptedContentSection" style="display: none;">
-      <h2>訂單資訊：</h2>
-      <div class="order-details">
-        <div>
-          <label>訂單編號：</label>
-          <span id="orderId"></span>
-        </div>
-        <div>
-          <label>訂單日期：</label>
-          <span id="orderDate"></span>
-        </div>
+
+    <div id="cameraSection" class="camera-container hidden">
+      <div class="scanning-area">
+        <video id="video" autoplay playsinline></video>
+        <div class="scanning-line"></div>
+      </div>
+      <canvas id="canvas"></canvas>
+      <div class="loading-overlay hidden" id="loadingOverlay">
+        正在啟動相機...
       </div>
     </div>
-    <div id="errorSection" style="display: none;">
+
+    <div id="decodedSection" class="hidden">
+      <button onclick="decryptContent()">進行解密</button>
+    </div>
+
+    <div id="decryptedSection" class="hidden">
+      <h2>解密結果：</h2>
+      <p id="orderId"></p>
+      <p id="orderDate"></p>
+    </div>
+
+    <div id="errorSection" class="hidden">
       <p class="error" id="errorMessage"></p>
     </div>
   </div>
@@ -88,15 +154,116 @@
     const state = {
       decodedContent: null,
       decryptedContent: null,
+      parsedContent: {
+        orderId: null,
+        orderDate: null
+      },
       errorMessage: null,
-      secretKey: "1234567890123456"
+      secretKey: "1234567890123456",
+      scanMethod: 'file',
+      loadingCamera: false,
+      scanning: false
     };
 
-    document.getElementById('fileInput').addEventListener('change', async function (event) {
-      state.decodedContent = null;
-      state.decryptedContent = null;
-      state.errorMessage = null;
-      updateUI();
+    function switchMethod(method) {
+      state.scanMethod = method;
+      document.getElementById('fileBtn').classList.toggle('active', method === 'file');
+      document.getElementById('cameraBtn').classList.toggle('active', method === 'camera');
+      document.getElementById('fileSection').classList.toggle('hidden', method === 'camera');
+      document.getElementById('cameraSection').classList.toggle('hidden', method === 'file');
+
+      if (method === 'camera') {
+        initCamera();
+      } else {
+        stopCamera();
+      }
+    }
+
+    async function initCamera() {
+      const video = document.getElementById('video');
+      const loadingOverlay = document.getElementById('loadingOverlay');
+      loadingOverlay.classList.remove('hidden');
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        video.srcObject = stream;
+        video.play();
+
+        video.onloadedmetadata = () => {
+          state.scanning = true;
+          scanQRCode();
+        };
+      } catch (error) {
+        handleCameraError(error);
+      } finally {
+        loadingOverlay.classList.add('hidden');
+      }
+    }
+
+    function stopCamera() {
+      state.scanning = false;
+      const video = document.getElementById('video');
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function scanQRCode() {
+      if (!state.scanning) return;
+
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const context = canvas.getContext('2d');
+
+      // Set canvas size to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Draw current video frame
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Scan for QR code
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+
+      if (code) {
+        // QR code found
+        state.decodedContent = code.data;
+        document.getElementById('decodedSection').classList.remove('hidden');
+        stopCamera();
+        switchMethod('file'); // Switch back to file mode after successful scan
+      } else {
+        // Continue scanning
+        requestAnimationFrame(scanQRCode);
+      }
+    }
+
+    function handleCameraError(error) {
+      let message = "相機啟動失敗";
+      if (error.name === 'NotAllowedError') {
+        message = "請允許使用相機權限";
+      } else if (error.name === 'NotFoundError') {
+        message = "找不到相機設備";
+      } else if (error.name === 'NotSupportedError') {
+        message = "您的瀏覽器不支援相機功能";
+      } else if (error.name === 'NotReadableError') {
+        message = "無法存取相機";
+      } else if (error.name === 'OverconstrainedError') {
+        message = "找不到符合要求的相機";
+      }
+      showError(message);
+    }
+
+    async function handleFileChange(event) {
+      resetState();
 
       const file = event.target.files[0];
       if (!file) {
@@ -108,30 +275,34 @@
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await axios.post("http://localhost:8080/api/orders/qrcode/decode",
-          formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
+        const response = await axios.post(
+          "http://localhost:8080/api/orders/qrcode/decode",
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" }
+          }
         );
 
         state.decodedContent = response.data;
-        updateUI();
+        document.getElementById('decodedSection').classList.remove('hidden');
       } catch (error) {
         console.error("解碼失敗", error);
         showError(error.response?.data || "無法解碼 QR Code，請確保上傳的文件有效。");
       }
-    });
+    }
 
-    function extractOrderInfo(text) {
-      const orderIdMatch = text.match(/Order ID: (\d+)/);
-      const orderDateMatch = text.match(/Order Date: (\d{4}-\d{2}-\d{2})/);
+    function parseDecryptedContent(content) {
+      const orderIdMatch = content.match(/Order ID: (\d+)/);
+      const orderDateMatch = content.match(/Order Date: (\d{4}-\d{2}-\d{2})/);
 
-      return {
+      state.parsedContent = {
         orderId: orderIdMatch ? orderIdMatch[1] : null,
         orderDate: orderDateMatch ? orderDateMatch[1] : null
       };
+
+      document.getElementById('orderId').textContent = `訂單編號: ${state.parsedContent.orderId}`;
+      document.getElementById('orderDate').textContent = `訂單日期: ${state.parsedContent.orderDate}`;
+      document.getElementById('decryptedSection').classList.remove('hidden');
     }
 
     function decryptContent() {
@@ -146,7 +317,7 @@
           CryptoJS.enc.Utf8.parse(state.secretKey),
           {
             mode: CryptoJS.mode.ECB,
-            padding: CryptoJS.pad.Pkcs7,
+            padding: CryptoJS.pad.Pkcs7
           }
         );
 
@@ -155,69 +326,38 @@
           throw new Error("解密失敗，結果為空");
         }
 
-        // 提取需要的資訊
-        const orderInfo = extractOrderInfo(decrypted);
-        state.decryptedContent = orderInfo;
-        console.log("解密結果:", orderInfo);
-        updateUI();
+        state.decryptedContent = decrypted;
+        parseDecryptedContent(decrypted);
       } catch (error) {
         console.error("解密失敗:", error.message);
         showError("解密失敗，請確認密鑰或內容是否正確。");
       }
     }
 
-    function formatDate(dateString) {
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('zh-TW', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        });
-      } catch {
-        return dateString;
-      }
-    }
-
     function showError(message) {
       state.errorMessage = message;
-      updateUI();
-    }
-
-    function updateUI() {
-      // 更新解碼結果區域
-      const decodedSection = document.getElementById('decodedContentSection');
-      const decodedContentEl = document.getElementById('decodedContent');
-      if (state.decodedContent) {
-        decodedSection.style.display = 'block';
-        decodedContentEl.textContent = state.decodedContent;
-      } else {
-        decodedSection.style.display = 'none';
-      }
-
-      // 更新解密結果區域
-      const decryptedSection = document.getElementById('decryptedContentSection');
-      if (state.decryptedContent) {
-        decryptedSection.style.display = 'block';
-        // 更新訂單資訊
-        document.getElementById('orderId').textContent =
-          state.decryptedContent.orderId || 'N/A';
-        document.getElementById('orderDate').textContent =
-          state.decryptedContent.orderDate ? formatDate(state.decryptedContent.orderDate) : 'N/A';
-      } else {
-        decryptedSection.style.display = 'none';
-      }
-
-      // 更新錯誤訊息區域
       const errorSection = document.getElementById('errorSection');
-      const errorMessageEl = document.getElementById('errorMessage');
-      if (state.errorMessage) {
-        errorSection.style.display = 'block';
-        errorMessageEl.textContent = state.errorMessage;
-      } else {
-        errorSection.style.display = 'none';
-      }
+      const errorMessage = document.getElementById('errorMessage');
+      errorMessage.textContent = message;
+      errorSection.classList.remove('hidden');
     }
+
+    function resetState() {
+      state.decodedContent = null;
+      state.decryptedContent = null;
+      state.parsedContent = {
+        orderId: null,
+        orderDate: null
+      };
+      state.errorMessage = null;
+
+      document.getElementById('decodedSection').classList.add('hidden');
+      document.getElementById('decryptedSection').classList.add('hidden');
+      document.getElementById('errorSection').classList.add('hidden');
+    }
+
+    // Initialize the UI
+    switchMethod('file');
   </script>
 </body>
 
