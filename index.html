@@ -5,10 +5,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>解碼 QR Code</title>
-  <!-- Fix CORS issues with subresource integrity -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js" integrity="sha512-NQfB/bDaB8kaSXF8E77JjhHG5PM6XVRxvHzkZiwl3ddWCEPBa23T76MuWSwAJdMGJnmQqM0VeY9kFszsrBEFrQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N4D0Dm3tlREONFQZB+D7w+gUA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js" integrity="sha512-imxb/LzmGq91sNoDFbvQqeFzy+cyyh+M5zxoEYhwxWahYX30JFkHzAIs6DPn1ZP+8Y7T+uXEH6zQIQNRKCHsZA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+ <!-- Load core CryptoJS first -->
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/core.min.js"></script>
+ <!-- Then load the specific algorithms we need -->
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/enc-base64.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/md5.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/evpkdf.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/cipher-core.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/aes.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/enc-utf8.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/pad-pkcs7.min.js"></script>
+ 
+ <!-- Other libraries -->
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
   <style>
     * {
         box-sizing: border-box;
@@ -200,6 +210,53 @@
             loadingCamera: false,
             scanning: false
         };
+
+        function isCryptoJSLoaded() {
+            return typeof CryptoJS !== 'undefined' && 
+                   typeof CryptoJS.AES !== 'undefined' && 
+                   typeof CryptoJS.enc.Utf8 !== 'undefined';
+        }
+
+        function decryptContent() {
+            if (!state.decodedContent) {
+                showError("沒有可解密的內容，請先解碼 QR Code。");
+                return;
+            }
+
+            if (!isCryptoJSLoaded()) {
+                showError("CryptoJS 庫尚未完全載入，請稍後再試。");
+                return;
+            }
+
+            try {
+                console.log("Attempting to decrypt:", state.decodedContent);
+                console.log("Using key:", state.secretKey);
+
+                const key = CryptoJS.enc.Utf8.parse(state.secretKey);
+                
+                const bytes = CryptoJS.AES.decrypt(
+                    state.decodedContent, 
+                    key, 
+                    {
+                        mode: CryptoJS.mode.ECB,
+                        padding: CryptoJS.pad.Pkcs7
+                    }
+                );
+
+                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                console.log("Decrypted result:", decrypted);
+
+                if (!decrypted) {
+                    throw new Error("解密結果為空");
+                }
+
+                state.decryptedContent = decrypted;
+                parseDecryptedContent(decrypted);
+            } catch (error) {
+                console.error("解密失敗:", error);
+                showError("解密失敗，請確認密鑰或內容是否正確。錯誤詳情：" + error.message);
+            }
+        }
 
         function switchMethod(method) {
             state.scanMethod = method;
