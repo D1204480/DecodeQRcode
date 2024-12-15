@@ -5,9 +5,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>解碼 QR Code</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+  <!-- Fix CORS issues with subresource integrity -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js" integrity="sha512-NQfB/bDaB8kaSXF8E77JjhHG5PM6XVRxvHzkZiwl3ddWCEPBa23T76MuWSwAJdMGJnmQqM0VeY9kFszsrBEFrQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N4D0Dm3tlREONFQZB+D7w+gUA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js" integrity="sha512-imxb/LzmGq91sNoDFbvQqeFzy+cyyh+M5zxoEYhwxWahYX30JFkHzAIs6DPn1ZP+8Y7T+uXEH6zQIQNRKCHsZA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     .decode-qrcode-view {
       padding: 20px;
@@ -138,46 +139,44 @@
 
 <body>
   <div class="decode-qrcode-view">
-    <h1>解碼 QR Code</h1>
+      <h1>解碼 QR Code</h1>
+      
+      <div class="scan-methods">
+          <button onclick="switchMethod('file')" id="fileBtn">檔案上傳</button>
+          <button onclick="switchMethod('camera')" id="cameraBtn">相機掃描</button>
+      </div>
 
-    <div class="scan-methods">
-      <button onclick="switchMethod('file')" id="fileBtn">檔案上傳</button>
-      <button onclick="switchMethod('camera')" id="cameraBtn">相機掃描</button>
-    </div>
+      <div id="fileSection">
+          <input type="file" onchange="handleFileChange(event)" accept="image/*" capture="environment"/>
+      </div>
 
-    <div id="fileSection">
-      <input type="file" onchange="handleFileChange(event)" accept="image/*" />
-    </div>
-
-    <div id="cameraSection" class="camera-container hidden">
-      <div class="scanning-area">
-          <video id="video" autoplay playsinline></video>
+      <div id="cameraSection" class="camera-container hidden">
+          <video id="video" autoplay playsinline muted></video>
           <canvas id="debugCanvas" class="debug-canvas"></canvas>
-          <div class="scanning-line"></div>
+          <canvas id="canvas"></canvas>
+          <div class="loading-overlay hidden" id="loadingOverlay">
+              正在啟動相機...
+          </div>
+          <p class="scanning-guide">請將 QR Code 對準鏡頭</p>
       </div>
-      <canvas id="canvas"></canvas>
-      <div class="loading-overlay hidden" id="loadingOverlay">
-          正在啟動相機...
+
+      <div id="decodedSection" class="hidden result-section">
+          <button onclick="decryptContent()">進行解密</button>
       </div>
-  </div>
 
-    <div id="decodedSection" class="hidden">
-      <button onclick="decryptContent()">進行解密</button>
-    </div>
+      <div id="decryptedSection" class="hidden result-section">
+          <h2>解密結果：</h2>
+          <p id="orderId"></p>
+          <p id="orderDate"></p>
+      </div>
 
-    <div id="decryptedSection" class="hidden">
-      <h2>解密結果：</h2>
-      <p id="orderId"></p>
-      <p id="orderDate"></p>
-    </div>
-
-    <div id="errorSection" class="hidden">
-      <p class="error" id="errorMessage"></p>
-    </div>
+      <div id="errorSection" class="hidden">
+          <p class="error" id="errorMessage"></p>
+      </div>
   </div>
 
   <script>
-    const state = {
+     const state = {
             decodedContent: null,
             decryptedContent: null,
             parsedContent: {
@@ -188,24 +187,22 @@
             secretKey: "1234567890123456",
             scanMethod: 'file',
             loadingCamera: false,
-            scanning: false,
-            canvasContext: null,
-            debugCanvasContext: null
+            scanning: false
         };
 
-    function switchMethod(method) {
-      state.scanMethod = method;
-      document.getElementById('fileBtn').classList.toggle('active', method === 'file');
-      document.getElementById('cameraBtn').classList.toggle('active', method === 'camera');
-      document.getElementById('fileSection').classList.toggle('hidden', method === 'camera');
-      document.getElementById('cameraSection').classList.toggle('hidden', method === 'file');
+        function switchMethod(method) {
+            state.scanMethod = method;
+            document.getElementById('fileBtn').classList.toggle('active', method === 'file');
+            document.getElementById('cameraBtn').classList.toggle('active', method === 'camera');
+            document.getElementById('fileSection').classList.toggle('hidden', method === 'camera');
+            document.getElementById('cameraSection').classList.toggle('hidden', method === 'file');
 
-      if (method === 'camera') {
-        initCamera();
-      } else {
-        stopCamera();
-      }
-    }
+            if (method === 'camera') {
+                initCamera();
+            } else {
+                stopCamera();
+            }
+        }
 
     async function initCamera() {
             const video = document.getElementById('video');
@@ -213,19 +210,23 @@
             const debugCanvas = document.getElementById('debugCanvas');
             const loadingOverlay = document.getElementById('loadingOverlay');
             
-            state.canvasContext = canvas.getContext('2d');
-            state.debugCanvasContext = debugCanvas.getContext('2d');
-            
             loadingOverlay.classList.remove('hidden');
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: "environment",
+                // Request camera with specific constraints for mobile
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { exact: "environment" }, // Use back camera
                         width: { ideal: 1280 },
                         height: { ideal: 720 }
                     }
+                }).catch(async () => {
+                    // Fallback to any available camera if back camera fails
+                    return await navigator.mediaDevices.getUserMedia({
+                        video: true
+                    });
                 });
+
                 video.srcObject = stream;
                 
                 // Wait for video to be ready
@@ -252,21 +253,22 @@
             }
         }
 
-    function stopCamera() {
-      state.scanning = false;
-      const video = document.getElementById('video');
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-      }
-    }
+        function stopCamera() {
+            state.scanning = false;
+            const video = document.getElementById('video');
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+        }
 
     function scanQRCode() {
             if (!state.scanning) return;
 
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
-            const context = state.canvasContext;
-            const debugContext = state.debugCanvasContext;
+            const debugCanvas = document.getElementById('debugCanvas');
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            const debugContext = debugCanvas.getContext('2d');
 
             // Clear debug canvas
             debugContext.clearRect(0, 0, canvas.width, canvas.height);
@@ -283,23 +285,28 @@
                 });
 
                 if (code) {
-                    console.log("QR Code detected:", code.data);
+                    console.log("Found QR code:", code.data);
+                    
+                    // Draw location
+                    debugContext.beginPath();
+                    debugContext.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                    debugContext.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+                    debugContext.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+                    debugContext.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+                    debugContext.lineTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                    debugContext.lineWidth = 4;
+                    debugContext.strokeStyle = "#FF3B58";
+                    debugContext.stroke();
 
-                    // Draw location of QR code
-                    drawQRLocation(code.location, debugContext);
-
-                    // Handle the decoded content
                     if (code.data) {
                         state.decodedContent = code.data;
                         document.getElementById('decodedSection').classList.remove('hidden');
                         stopCamera();
-                        switchMethod('file'); // Switch back to file mode after successful scan
                         return;
                     }
                 }
             }
 
-            // Continue scanning
             requestAnimationFrame(scanQRCode);
         }
 
@@ -316,21 +323,22 @@
             context.stroke();
         }
 
-    function handleCameraError(error) {
-      let message = "相機啟動失敗";
-      if (error.name === 'NotAllowedError') {
-        message = "請允許使用相機權限";
-      } else if (error.name === 'NotFoundError') {
-        message = "找不到相機設備";
-      } else if (error.name === 'NotSupportedError') {
-        message = "您的瀏覽器不支援相機功能";
-      } else if (error.name === 'NotReadableError') {
-        message = "無法存取相機";
-      } else if (error.name === 'OverconstrainedError') {
-        message = "找不到符合要求的相機";
-      }
-      showError(message);
-    }
+        function handleCameraError(error) {
+            console.error('Camera error:', error);
+            let message = "相機啟動失敗";
+            if (error.name === 'NotAllowedError') {
+                message = "請允許使用相機權限";
+            } else if (error.name === 'NotFoundError') {
+                message = "找不到相機設備";
+            } else if (error.name === 'NotSupportedError') {
+                message = "您的瀏覽器不支援相機功能";
+            } else if (error.name === 'NotReadableError') {
+                message = "無法存取相機";
+            } else if (error.name === 'OverconstrainedError') {
+                message = "找不到符合要求的相機";
+            }
+            showError(message);
+        }
 
     async function handleFileChange(event) {
       resetState();
@@ -405,12 +413,13 @@
     }
 
     function showError(message) {
-      state.errorMessage = message;
-      const errorSection = document.getElementById('errorSection');
-      const errorMessage = document.getElementById('errorMessage');
-      errorMessage.textContent = message;
-      errorSection.classList.remove('hidden');
-    }
+            state.errorMessage = message;
+            const errorSection = document.getElementById('errorSection');
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorSection.classList.remove('hidden');
+            console.error(message);
+        }
 
     function resetState() {
       state.decodedContent = null;
@@ -427,7 +436,9 @@
     }
 
     // Initialize the UI
-    switchMethod('file');
+    document.addEventListener('DOMContentLoaded', () => {
+            switchMethod('file');
+        });
   </script>
 </body>
 
