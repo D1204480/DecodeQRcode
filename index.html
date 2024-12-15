@@ -34,6 +34,24 @@
     .error {
       color: red;
     }
+
+    .order-details {
+      margin-top: 15px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+
+    .order-details div {
+      margin: 8px 0;
+    }
+
+    .order-details label {
+      font-weight: bold;
+      margin-right: 10px;
+      min-width: 100px;
+      display: inline-block;
+    }
   </style>
 </head>
 
@@ -49,8 +67,17 @@
       <button onclick="decryptContent()">進一步解密</button>
     </div>
     <div id="decryptedContentSection" style="display: none;">
-      <h2>解密結果：</h2>
-      <p id="decryptedContent"></p>
+      <h2>訂單資訊：</h2>
+      <div class="order-details">
+        <div>
+          <label>訂單編號：</label>
+          <span id="orderId"></span>
+        </div>
+        <div>
+          <label>訂單日期：</label>
+          <span id="orderDate"></span>
+        </div>
+      </div>
     </div>
     <div id="errorSection" style="display: none;">
       <p class="error" id="errorMessage"></p>
@@ -97,6 +124,16 @@
       }
     });
 
+    function extractOrderInfo(text) {
+      const orderIdMatch = text.match(/Order ID: (\d+)/);
+      const orderDateMatch = text.match(/Order Date: (\d{4}-\d{2}-\d{2})/);
+
+      return {
+        orderId: orderIdMatch ? orderIdMatch[1] : null,
+        orderDate: orderDateMatch ? orderDateMatch[1] : null
+      };
+    }
+
     function decryptContent() {
       if (!state.decodedContent) {
         showError("沒有可解密的內容，請先解碼 QR Code。");
@@ -118,12 +155,27 @@
           throw new Error("解密失敗，結果為空");
         }
 
-        state.decryptedContent = decrypted;
-        console.log("解密結果:", decrypted);
+        // 提取需要的資訊
+        const orderInfo = extractOrderInfo(decrypted);
+        state.decryptedContent = orderInfo;
+        console.log("解密結果:", orderInfo);
         updateUI();
       } catch (error) {
         console.error("解密失敗:", error.message);
         showError("解密失敗，請確認密鑰或內容是否正確。");
+      }
+    }
+
+    function formatDate(dateString) {
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('zh-TW', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      } catch {
+        return dateString;
       }
     }
 
@@ -145,10 +197,13 @@
 
       // 更新解密結果區域
       const decryptedSection = document.getElementById('decryptedContentSection');
-      const decryptedContentEl = document.getElementById('decryptedContent');
       if (state.decryptedContent) {
         decryptedSection.style.display = 'block';
-        decryptedContentEl.textContent = state.decryptedContent;
+        // 更新訂單資訊
+        document.getElementById('orderId').textContent =
+          state.decryptedContent.orderId || 'N/A';
+        document.getElementById('orderDate').textContent =
+          state.decryptedContent.orderDate ? formatDate(state.decryptedContent.orderDate) : 'N/A';
       } else {
         decryptedSection.style.display = 'none';
       }
