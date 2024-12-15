@@ -1,166 +1,169 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>解碼 QR Code</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-    <style>
-        .decode-qrcode-view {
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        
-        .decode-qrcode-view button {
-            margin-top: 10px;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>解碼 QR Code</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    .decode-qrcode-view {
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
 
-        .decode-qrcode-view h2 {
-            color: #333;
-            margin-top: 20px;
-        }
+    .decode-qrcode-view button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
 
-        .decode-qrcode-view p {
-            font-size: 16px;
-            color: #666;
-        }
+    .decode-qrcode-view h2 {
+      color: #333;
+      margin-top: 20px;
+    }
 
-        .error {
-            color: red;
-        }
-    </style>
+    .decode-qrcode-view p {
+      font-size: 16px;
+      color: #666;
+    }
+
+    .error {
+      color: red;
+    }
+  </style>
 </head>
+
 <body>
-    <div class="decode-qrcode-view">
-        <h1>解碼 QR Code</h1>
-        <div>
-            <input type="file" id="fileInput" accept="image/*" />
-        </div>
-        <div id="decodedContentSection" style="display: none;">
-            <h2>解碼結果：</h2>
-            <p id="decodedContent"></p>
-            <button onclick="decryptContent()">進一步解密</button>
-        </div>
-        <div id="decryptedContentSection" style="display: none;">
-            <h2>解密結果：</h2>
-            <p id="decryptedContent"></p>
-        </div>
-        <div id="errorSection" style="display: none;">
-            <p class="error" id="errorMessage"></p>
-        </div>
+  <div class="decode-qrcode-view">
+    <h1>解碼 QR Code</h1>
+    <div>
+      <input type="file" id="fileInput" accept="image/*" />
     </div>
+    <div id="decodedContentSection" style="display: none;">
+      <h2>解碼結果：</h2>
+      <p id="decodedContent"></p>
+      <button onclick="decryptContent()">進一步解密</button>
+    </div>
+    <div id="decryptedContentSection" style="display: none;">
+      <h2>解密結果：</h2>
+      <p id="decryptedContent"></p>
+    </div>
+    <div id="errorSection" style="display: none;">
+      <p class="error" id="errorMessage"></p>
+    </div>
+  </div>
 
-    <script>
-        const state = {
-            decodedContent: null,
-            decryptedContent: null,
-            errorMessage: null,
-            secretKey: "1234567890123456"
-        };
+  <script>
+    const state = {
+      decodedContent: null,
+      decryptedContent: null,
+      errorMessage: null,
+      secretKey: "1234567890123456"
+    };
 
-        document.getElementById('fileInput').addEventListener('change', async function(event) {
-            state.decodedContent = null;
-            state.decryptedContent = null;
-            state.errorMessage = null;
-            updateUI();
+    document.getElementById('fileInput').addEventListener('change', async function (event) {
+      state.decodedContent = null;
+      state.decryptedContent = null;
+      state.errorMessage = null;
+      updateUI();
 
-            const file = event.target.files[0];
-            if (!file) {
-                showError("請選擇一個有效的圖片文件。");
-                return;
-            }
+      const file = event.target.files[0];
+      if (!file) {
+        showError("請選擇一個有效的圖片文件。");
+        return;
+      }
 
-            try {
-                const formData = new FormData();
-                formData.append("file", file);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
 
-                const response = await axios.post("http://localhost:8080/api/orders/qrcode/decode", 
-                    formData, {
-                        headers: {
-                            "Content-Type": "multipart/form-data",
-                        },
-                    }
-                );
+        const response = await axios.post("http://localhost:8080/api/orders/qrcode/decode",
+          formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+        );
 
-                state.decodedContent = response.data;
-                updateUI();
-            } catch (error) {
-                console.error("解碼失敗", error);
-                showError(error.response?.data || "無法解碼 QR Code，請確保上傳的文件有效。");
-            }
-        });
+        state.decodedContent = response.data;
+        updateUI();
+      } catch (error) {
+        console.error("解碼失敗", error);
+        showError(error.response?.data || "無法解碼 QR Code，請確保上傳的文件有效。");
+      }
+    });
 
-        function decryptContent() {
-            if (!state.decodedContent) {
-                showError("沒有可解密的內容，請先解碼 QR Code。");
-                return;
-            }
+    function decryptContent() {
+      if (!state.decodedContent) {
+        showError("沒有可解密的內容，請先解碼 QR Code。");
+        return;
+      }
 
-            try {
-                const bytes = CryptoJS.AES.decrypt(
-                    state.decodedContent, 
-                    CryptoJS.enc.Utf8.parse(state.secretKey), 
-                    {
-                        mode: CryptoJS.mode.ECB,
-                        padding: CryptoJS.pad.Pkcs7,
-                    }
-                );
+      try {
+        const bytes = CryptoJS.AES.decrypt(
+          state.decodedContent,
+          CryptoJS.enc.Utf8.parse(state.secretKey),
+          {
+            mode: CryptoJS.mode.ECB,
+            padding: CryptoJS.pad.Pkcs7,
+          }
+        );
 
-                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-                if (!decrypted) {
-                    throw new Error("解密失敗，結果為空");
-                }
-
-                state.decryptedContent = decrypted;
-                console.log("解密結果:", decrypted);
-                updateUI();
-            } catch (error) {
-                console.error("解密失敗:", error.message);
-                showError("解密失敗，請確認密鑰或內容是否正確。");
-            }
+        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+        if (!decrypted) {
+          throw new Error("解密失敗，結果為空");
         }
 
-        function showError(message) {
-            state.errorMessage = message;
-            updateUI();
-        }
+        state.decryptedContent = decrypted;
+        console.log("解密結果:", decrypted);
+        updateUI();
+      } catch (error) {
+        console.error("解密失敗:", error.message);
+        showError("解密失敗，請確認密鑰或內容是否正確。");
+      }
+    }
 
-        function updateUI() {
-            // 更新解碼結果區域
-            const decodedSection = document.getElementById('decodedContentSection');
-            const decodedContentEl = document.getElementById('decodedContent');
-            if (state.decodedContent) {
-                decodedSection.style.display = 'block';
-                decodedContentEl.textContent = state.decodedContent;
-            } else {
-                decodedSection.style.display = 'none';
-            }
+    function showError(message) {
+      state.errorMessage = message;
+      updateUI();
+    }
 
-            // 更新解密結果區域
-            const decryptedSection = document.getElementById('decryptedContentSection');
-            const decryptedContentEl = document.getElementById('decryptedContent');
-            if (state.decryptedContent) {
-                decryptedSection.style.display = 'block';
-                decryptedContentEl.textContent = state.decryptedContent;
-            } else {
-                decryptedSection.style.display = 'none';
-            }
+    function updateUI() {
+      // 更新解碼結果區域
+      const decodedSection = document.getElementById('decodedContentSection');
+      const decodedContentEl = document.getElementById('decodedContent');
+      if (state.decodedContent) {
+        decodedSection.style.display = 'block';
+        decodedContentEl.textContent = state.decodedContent;
+      } else {
+        decodedSection.style.display = 'none';
+      }
 
-            // 更新錯誤訊息區域
-            const errorSection = document.getElementById('errorSection');
-            const errorMessageEl = document.getElementById('errorMessage');
-            if (state.errorMessage) {
-                errorSection.style.display = 'block';
-                errorMessageEl.textContent = state.errorMessage;
-            } else {
-                errorSection.style.display = 'none';
-            }
-        }
-    </script>
+      // 更新解密結果區域
+      const decryptedSection = document.getElementById('decryptedContentSection');
+      const decryptedContentEl = document.getElementById('decryptedContent');
+      if (state.decryptedContent) {
+        decryptedSection.style.display = 'block';
+        decryptedContentEl.textContent = state.decryptedContent;
+      } else {
+        decryptedSection.style.display = 'none';
+      }
+
+      // 更新錯誤訊息區域
+      const errorSection = document.getElementById('errorSection');
+      const errorMessageEl = document.getElementById('errorMessage');
+      if (state.errorMessage) {
+        errorSection.style.display = 'block';
+        errorMessageEl.textContent = state.errorMessage;
+      } else {
+        errorSection.style.display = 'none';
+      }
+    }
+  </script>
 </body>
+
 </html>
